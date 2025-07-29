@@ -91,6 +91,7 @@ def parse_arguments() -> Namespace:
         --branch: Load a specific branch
         --step: Load a specific step in a project/branch
         --llm-endpoint: Use specific API endpoint for the given provider
+        --json: Enable JSON output for Neovim or other integrations
         --llm-key: Use specific LLM key for the given provider
         --import-v0: Import data from a v0 (gpt-pilot) database with the given path
         --email: User's email address, if provided
@@ -114,6 +115,7 @@ def parse_arguments() -> Namespace:
     parser.add_argument("--project", help="Load a specific project", type=UUID, required=False)
     parser.add_argument("--branch", help="Load a specific branch", type=UUID, required=False)
     parser.add_argument("--step", help="Load a specific step in a project/branch", type=int, required=False)
+    parser.add_argument("--json", help="Enable JSON output for Neovim or other integrations", action="store_true")
     parser.add_argument("--delete", help="Delete a specific project", type=UUID, required=False)
     parser.add_argument(
         "--llm-endpoint",
@@ -321,7 +323,7 @@ def init() -> tuple[UIBase, SessionManager, Namespace]:
     elif config.ui.type == UIAdapter.VIRTUAL:
         ui = VirtualUI(config.ui.inputs)
     else:
-        ui = PlainConsoleUI()
+        ui = PlainConsoleUI(json_mode=args.json)
 
     run_migrations(config.db)
     db = SessionManager(config.db)

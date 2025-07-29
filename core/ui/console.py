@@ -1,17 +1,17 @@
+import json
 from typing import Optional
-
 from prompt_toolkit.shortcuts import PromptSession
-
 from core.log import get_logger
 from core.ui.base import UIBase, UIClosedError, UISource, UserInput
+import sys
 
 log = get_logger(__name__)
 
 
 class PlainConsoleUI(UIBase):
-    """
-    UI adapter for plain (no color) console output.
-    """
+    def __init__(self, json_mode: bool = False):
+        self.json_mode = json_mode
+        self.session = PromptSession()
 
     async def start(self) -> bool:
         log.debug("Starting console UI")
@@ -23,11 +23,16 @@ class PlainConsoleUI(UIBase):
     async def send_stream_chunk(
         self, chunk: Optional[str], *, source: Optional[UISource] = None, project_state_id: Optional[str] = None
     ):
-        if chunk is None:
-            # end of stream
-            print("", flush=True)
+        if self.json_mode:
+            if chunk is None:
+                print(json.dumps({"stream": None}))
+            else:
+                print(json.dumps({"stream": chunk}))
         else:
-            print(chunk, end="", flush=True)
+            if chunk is None:
+                print("", flush=True)
+            else:
+                print(chunk, end="", flush=True)
 
     async def send_message(
         self,
@@ -37,30 +42,17 @@ class PlainConsoleUI(UIBase):
         project_state_id: Optional[str] = None,
         extra_info: Optional[str] = None,
     ):
-        if source:
-            print(f"[{source}] {message}")
+        if self.json_mode:
+            print(json.dumps({"message": message, "source": str(source) if source else None}))
         else:
-            print(message)
+            if source:
+                print(f"[{source}] {message}")
+            else:
+                print(message)
 
     async def send_key_expired(self, message: Optional[str] = None):
         if message:
             await self.send_message(message)
-
-    async def send_app_finished(
-        self,
-        app_id: Optional[str] = None,
-        app_name: Optional[str] = None,
-        folder_name: Optional[str] = None,
-    ):
-        pass
-
-    async def send_feature_finished(
-        self,
-        app_id: Optional[str] = None,
-        app_name: Optional[str] = None,
-        folder_name: Optional[str] = None,
-    ):
-        pass
 
     async def ask_question(
         self,
@@ -79,34 +71,55 @@ class PlainConsoleUI(UIBase):
         extra_info: Optional[str] = None,
         placeholder: Optional[str] = None,
     ) -> UserInput:
-        if source:
-            print(f"[{source}] {question}")
-        else:
-            print(f"{question}")
+        if self.json_mode:
+            payload = {
+                "question": question,
+                "buttons": buttons,
+                "default": default,
+                "buttons_only": buttons_only,
+                "hint": hint,
+                "placeholder": placeholder,
+                "extra_info": extra_info,
+            }
+            print(json.dumps({"input_request": payload}), flush=True)
 
-        if buttons:
-            for k, v in buttons.items():
-                default_str = " (default)" if k == default else ""
-                print(f"  [{k}]: {v}{default_str}")
-
-        session = PromptSession("> ")
-
-        while True:
             try:
-                choice = await session.prompt_async(default=initial_text or "")
-                choice = choice.strip()
+                raw = await self.session.prompt_async("", default=initial_text or "")
             except KeyboardInterrupt:
                 raise UIClosedError()
-            if not choice and default:
-                choice = default
-            if buttons and choice in buttons:
-                return UserInput(button=choice, text=None)
-            if buttons_only:
-                print("Please choose one of available options")
-                continue
-            if choice or allow_empty:
-                return UserInput(button=None, text=choice)
-            print("Please provide a valid input")
+            choice = raw.strip()
+
+        else:
+            if source:
+                print(f"[{source}] {question}")
+            else:
+                print(f"{question}")
+
+            if buttons:
+                for k, v in buttons.items():
+                    default_str = " (default)" if k == default else ""
+                    print(f"  [{k}]: {v}{default_str}")
+
+            while True:
+                try:
+                    choice = await self.session.prompt_async(default=initial_text or "")
+                    choice = choice.strip()
+                except KeyboardInterrupt:
+                    raise UIClosedError()
+                if not choice and default:
+                    choice = default
+                if buttons and choice in buttons:
+                    return UserInput(button=choice, text=None)
+                if buttons_only:
+                    print("Please choose one of available options")
+                    continue
+                if choice or allow_empty:
+                    return UserInput(button=None, text=choice)
+                print("Please provide a valid input")
+
+        if buttons and choice in buttons:
+            return UserInput(button=choice, text=None)
+        return UserInput(button=None, text=choice)
 
     async def send_project_stage(self, data: dict):
         pass
